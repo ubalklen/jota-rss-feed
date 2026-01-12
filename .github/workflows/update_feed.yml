@@ -40,7 +40,7 @@ jobs:
         run: uv sync
 
       - name: Generate RSS feeds
-        run: uv run python src/main.py --tags-file tags.txt --debug
+        run: uv run python src/main.py --tags-file tags.txt
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
