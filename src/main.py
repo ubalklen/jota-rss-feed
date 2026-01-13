@@ -267,7 +267,6 @@ def generate_feed_for_tag(tag: str, articles: list[Article], output_dir: str) ->
         fe.id(article.url)
         fe.title(article.title)
         fe.link(href=article.url)
-        fe.published(datetime.now(UTC))
 
         description_parts = []
         if article.category:
@@ -312,7 +311,6 @@ def generate_combined_feed(
         fe.id(article.url)
         fe.title(f"[{tag.upper()}] {article.title}")
         fe.link(href=article.url)
-        fe.published(datetime.now(UTC))
 
         description_parts = []
         if article.category:
