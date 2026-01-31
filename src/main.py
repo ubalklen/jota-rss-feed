@@ -262,7 +262,7 @@ def generate_feed_for_tag(tag: str, articles: list[Article], output_dir: str) ->
     fg.language("pt-BR")
     fg.lastBuildDate(datetime.now(UTC))
 
-    for article in articles:
+    for article in reversed(articles):
         fe = fg.add_entry()
         fe.id(article.url)
         fe.title(article.title)
@@ -306,7 +306,7 @@ def generate_combined_feed(
             seen_urls.add(article.url)
             unique_articles.append((tag, article))
 
-    for tag, article in unique_articles:
+    for tag, article in reversed(unique_articles):
         fe = fg.add_entry()
         fe.id(article.url)
         fe.title(f"[{tag.upper()}] {article.title}")
