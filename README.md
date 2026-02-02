@@ -87,6 +87,8 @@ Once deployed, feeds are available at:
 https://ubalklen.github.io/jota-rss-feed/<tag>.xml
 ```
 
+For example, for the "stf" tag: `https://ubalklen.github.io/jota-rss-feed/stf.xml`
+
 A combined feed with all tags is at:
 
 ```
