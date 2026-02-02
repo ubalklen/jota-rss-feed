@@ -18,7 +18,7 @@ A Python CLI tool that generates RSS feeds from [JOTA Info](https://www.jota.inf
 ## Installation
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/jota-rss-feed.git
+git clone https://github.com/ubalklen/jota-rss-feed.git
 cd jota-rss-feed
 uv sync
 ```
@@ -84,13 +84,13 @@ The repository uses GitHub Actions to:
 Once deployed, feeds are available at:
 
 ```
-https://<username>.github.io/jota-rss-feed/<tag>.xml
+https://ubalklen.github.io/jota-rss-feed/<tag>.xml
 ```
 
 A combined feed with all tags is at:
 
 ```
-https://<username>.github.io/jota-rss-feed/feed.xml
+https://ubalklen.github.io/jota-rss-feed/feed.xml
 ```
 
 ## Development
