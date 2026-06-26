@@ -1,4 +1,5 @@
 import os
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import httpx
@@ -7,7 +8,9 @@ import pytest
 from src.main import (
     Article,
     async_main,
+    enrich_articles_with_dates,
     extract_next_data,
+    fetch_article_date,
     fetch_page,
     generate_combined_feed,
     generate_feed_for_tag,
@@ -614,3 +617,162 @@ class TestArticleDataclass:
             image_url="https://example.com/img.jpg",
         )
         assert article.image_url == "https://example.com/img.jpg"
+
+    def test_article_with_pub_date(self):
+        pub_date = datetime(2026, 6, 26, 8, 10, 11, tzinfo=UTC)
+        article = Article(
+            title="Test",
+            url="https://example.com",
+            authors=["Author"],
+            category="TRIBUTOS",
+            pub_date=pub_date,
+        )
+        assert article.pub_date == pub_date
+
+
+class TestFetchArticleDate:
+    @pytest.mark.asyncio
+    async def test_fetch_article_date_success(self):
+        html = """
+        <html>
+        <script id="__NEXT_DATA__" type="application/json">
+        {"props":{"pageProps":{"post":{"dates":{"publication_iso8601_utc":"2026-06-26T08:10:11Z"}}}}}
+        </script>
+        </html>
+        """
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_response = MagicMock()
+        mock_response.text = html
+        mock_response.raise_for_status = MagicMock()
+        mock_client.get.return_value = mock_response
+
+        result = await fetch_article_date(mock_client, "https://www.jota.info/article-1")
+        assert result == datetime(2026, 6, 26, 8, 10, 11, tzinfo=UTC)
+
+    @pytest.mark.asyncio
+    async def test_fetch_article_date_fallback_to_date_gmt(self):
+        html = """
+        <html>
+        <script id="__NEXT_DATA__" type="application/json">
+        {"props":{"pageProps":{"post":{"date_gmt":"2026-06-26 08:10:11"}}}}
+        </script>
+        </html>
+        """
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_response = MagicMock()
+        mock_response.text = html
+        mock_response.raise_for_status = MagicMock()
+        mock_client.get.return_value = mock_response
+
+        result = await fetch_article_date(mock_client, "https://www.jota.info/article-1")
+        assert result == datetime(2026, 6, 26, 8, 10, 11, tzinfo=UTC)
+
+    @pytest.mark.asyncio
+    async def test_fetch_article_date_no_data(self):
+        html = "<html><body>No data</body></html>"
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_response = MagicMock()
+        mock_response.text = html
+        mock_response.raise_for_status = MagicMock()
+        mock_client.get.return_value = mock_response
+
+        result = await fetch_article_date(mock_client, "https://www.jota.info/article-1")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_article_date_http_error(self):
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.side_effect = httpx.RequestError("Connection failed")
+
+        result = await fetch_article_date(mock_client, "https://www.jota.info/article-1")
+        assert result is None
+
+
+class TestEnrichArticlesWithDates:
+    @pytest.mark.asyncio
+    async def test_enrich_articles_with_dates(self):
+        articles = [
+            Article(
+                title="Article 1",
+                url="https://www.jota.info/article-1",
+                authors=["Author"],
+                category="TRIBUTOS",
+            ),
+            Article(
+                title="Article 2",
+                url="https://www.jota.info/article-2",
+                authors=["Author"],
+                category="STF",
+            ),
+        ]
+
+        html = """
+        <html>
+        <script id="__NEXT_DATA__" type="application/json">
+        {"props":{"pageProps":{"post":{"dates":{"publication_iso8601_utc":"2026-06-26T08:10:11Z"}}}}}
+        </script>
+        </html>
+        """
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_response = MagicMock()
+        mock_response.text = html
+        mock_response.raise_for_status = MagicMock()
+        mock_client.get.return_value = mock_response
+
+        await enrich_articles_with_dates(mock_client, articles)
+
+        assert articles[0].pub_date == datetime(2026, 6, 26, 8, 10, 11, tzinfo=UTC)
+        assert articles[1].pub_date == datetime(2026, 6, 26, 8, 10, 11, tzinfo=UTC)
+
+    @pytest.mark.asyncio
+    async def test_enrich_skips_articles_with_dates(self):
+        existing_date = datetime(2026, 1, 1, tzinfo=UTC)
+        articles = [
+            Article(
+                title="Article 1",
+                url="https://www.jota.info/article-1",
+                authors=["Author"],
+                category="TRIBUTOS",
+                pub_date=existing_date,
+            ),
+        ]
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        await enrich_articles_with_dates(mock_client, articles)
+
+        mock_client.get.assert_not_called()
+        assert articles[0].pub_date == existing_date
+
+
+class TestFeedWithPubDate:
+    def test_generate_feed_includes_pub_date(self, tmp_path):
+        pub_date = datetime(2026, 6, 26, 8, 10, 11, tzinfo=UTC)
+        articles = [
+            Article(
+                title="Test Article",
+                url="https://www.jota.info/article-1",
+                authors=["Author"],
+                category="TRIBUTOS",
+                pub_date=pub_date,
+            ),
+        ]
+
+        output_path = generate_feed_for_tag("test", articles, str(tmp_path))
+        with open(output_path) as f:
+            content = f.read()
+            assert "<pubDate>" in content
+
+    def test_generate_feed_without_pub_date(self, tmp_path):
+        articles = [
+            Article(
+                title="Test Article",
+                url="https://www.jota.info/article-1",
+                authors=["Author"],
+                category="TRIBUTOS",
+            ),
+        ]
+
+        output_path = generate_feed_for_tag("test", articles, str(tmp_path))
+        with open(output_path) as f:
+            content = f.read()
+            assert "<pubDate>" not in content

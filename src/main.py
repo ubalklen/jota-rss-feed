@@ -30,6 +30,7 @@ class Article:
     authors: list[str]
     category: str
     image_url: str | None = None
+    pub_date: datetime | None = None
 
 
 def load_tags_from_file(filepath: str) -> list[str]:
@@ -187,6 +188,41 @@ async def fetch_page(client: httpx.AsyncClient, url: str) -> str | None:
         return None
 
 
+async def fetch_article_date(client: httpx.AsyncClient, url: str) -> datetime | None:
+    try:
+        html = await fetch_page(client, url)
+        if not html:
+            return None
+        next_data = extract_next_data(html)
+        if not next_data:
+            return None
+        post = next_data.get("props", {}).get("pageProps", {}).get("post", {})
+        dates = post.get("dates", {})
+        iso_date = dates.get("publication_iso8601_utc") or dates.get("publication_iso8601")
+        if iso_date:
+            return datetime.fromisoformat(iso_date)
+        date_str = post.get("date_gmt") or post.get("date")
+        if date_str:
+            return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+    except Exception as e:
+        logger.warning(f"Failed to fetch date for {url}: {e}")
+    return None
+
+
+async def enrich_articles_with_dates(
+    client: httpx.AsyncClient, articles: list[Article], concurrency: int = 5
+) -> None:
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def fetch_date_with_limit(article: Article) -> None:
+        async with semaphore:
+            article.pub_date = await fetch_article_date(client, article.url)
+
+    tasks = [fetch_date_with_limit(article) for article in articles if article.pub_date is None]
+    if tasks:
+        await asyncio.gather(*tasks)
+
+
 async def scrape_tag(
     client: httpx.AsyncClient, tag: str, max_pages: int = DEFAULT_MAX_PAGES
 ) -> list[Article]:
@@ -231,7 +267,11 @@ async def scrape_tag(
             seen_urls.add(article.url)
             unique_articles.append(article)
 
-    logger.info(f"Tag {tag}: scraped {len(unique_articles)} unique articles")
+    logger.info(f"Tag {tag}: scraped {len(unique_articles)} unique articles, fetching dates...")
+    await enrich_articles_with_dates(client, unique_articles)
+
+    articles_with_dates = sum(1 for a in unique_articles if a.pub_date is not None)
+    logger.info(f"Tag {tag}: got dates for {articles_with_dates}/{len(unique_articles)} articles")
     return unique_articles
 
 
@@ -267,6 +307,8 @@ def generate_feed_for_tag(tag: str, articles: list[Article], output_dir: str) ->
         fe.id(article.url)
         fe.title(article.title)
         fe.link(href=article.url)
+        if article.pub_date:
+            fe.pubDate(article.pub_date)
 
         description_parts = []
         if article.category:
@@ -311,6 +353,8 @@ def generate_combined_feed(
         fe.id(article.url)
         fe.title(f"[{tag.upper()}] {article.title}")
         fe.link(href=article.url)
+        if article.pub_date:
+            fe.pubDate(article.pub_date)
 
         description_parts = []
         if article.category:
